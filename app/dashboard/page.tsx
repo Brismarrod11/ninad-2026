@@ -1,149 +1,140 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import {
+  Suspense,
+  useEffect,
+  useState,
+} from "react";
+import {
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 
 type Coordinator = {
-  id: number;
   name: string;
-  mobile: string;
+  phone: string;
+  email?: string;
 };
 
 type Child = {
-  id: number;
   name: string;
-  className: string;
-  gender: "Boy" | "Girl";
-  parentMobile: string;
+  age: string;
+  gender: string;
+  category?: string;
 };
 
-type EditType = "coordinator" | "child" | null;
-
-const classes = [
-  "Nursery",
-  "LKG",
-  "UKG",
-  "1st",
-  "2nd",
-  "3rd",
-  "4th",
-  "5th",
-  "6th",
-  "7th",
-  "8th",
-  "9th",
-  "10th",
-];
+type Registration = {
+  _id?: string;
+  parish: string;
+  coordinators: Coordinator[];
+  children: Child[];
+  submitted?: boolean;
+  registrationCode?: string;
+};
 
 function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const parish = searchParams.get("parish") || "";
+  const requestedParish =
+    searchParams.get("parish") || "";
 
-  // -----------------------------------------
-  // DATA
-  // -----------------------------------------
+  const [parish, setParish] = useState("");
+  const [authChecking, setAuthChecking] =
+    useState(true);
 
-  const [coordinators, setCoordinators] = useState<
-    Coordinator[]
-  >([]);
-
-  const [children, setChildren] = useState<Child[]>([]);
-
-  // -----------------------------------------
-  // LOADING / ERROR
-  // -----------------------------------------
+  const [registration, setRegistration] =
+    useState<Registration | null>(null);
 
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-
-  // -----------------------------------------
-  // ADD COORDINATOR
-  // -----------------------------------------
-
-  const [showCoordinatorForm, setShowCoordinatorForm] =
-    useState(false);
 
   const [coordinatorName, setCoordinatorName] =
     useState("");
-
-  const [coordinatorMobile, setCoordinatorMobile] =
+  const [coordinatorPhone, setCoordinatorPhone] =
+    useState("");
+  const [coordinatorEmail, setCoordinatorEmail] =
     useState("");
 
-  // -----------------------------------------
-  // ADD CHILD
-  // -----------------------------------------
-
-  const [showChildForm, setShowChildForm] =
-    useState(false);
-
-  const [childName, setChildName] = useState("");
-  const [childClass, setChildClass] = useState("");
-
+  const [childName, setChildName] =
+    useState("");
+  const [childAge, setChildAge] =
+    useState("");
   const [childGender, setChildGender] =
-    useState<"Boy" | "Girl" | "">("");
-
-  const [parentMobile, setParentMobile] =
     useState("");
 
-  // -----------------------------------------
-  // EDIT MODAL
-  // -----------------------------------------
-
-  const [editType, setEditType] =
-    useState<EditType>(null);
-
-  const [editingCoordinator, setEditingCoordinator] =
-    useState<Coordinator | null>(null);
-
-  const [editingChild, setEditingChild] =
-    useState<Child | null>(null);
-
-  // -----------------------------------------
-  // EDIT COORDINATOR
-  // -----------------------------------------
-
-  const [editCoordinatorName, setEditCoordinatorName] =
-    useState("");
-
-  const [
-    editCoordinatorMobile,
-    setEditCoordinatorMobile,
-  ] = useState("");
-
-  // -----------------------------------------
-  // EDIT CHILD
-  // -----------------------------------------
-
-  const [editChildName, setEditChildName] =
-    useState("");
-
-  const [editChildClass, setEditChildClass] =
-    useState("");
-
-  const [editChildGender, setEditChildGender] =
-    useState<"Boy" | "Girl" | "">("");
-
-  const [editParentMobile, setEditParentMobile] =
-    useState("");
-
-  // -----------------------------------------
-  // LOAD REGISTRATION
-  // -----------------------------------------
-
+  /*
+   * VERIFY PARISH SESSION
+   *
+   * The parish in the URL is NOT trusted.
+   * The server-side session decides which parish
+   * this browser is allowed to access.
+   */
   useEffect(() => {
-    async function loadRegistration() {
-      if (!parish) {
-        setLoading(false);
-        return;
+    async function verifyParishAccess() {
+      try {
+        const response = await fetch(
+          "/api/parish-auth/session",
+          {
+            cache: "no-store",
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          router.replace("/register");
+          return;
+        }
+
+        /*
+         * If somebody changes:
+         *
+         * ?parish=Another Parish
+         *
+         * redirect them back to their authenticated parish.
+         */
+        if (
+          requestedParish &&
+          data.parish !== requestedParish
+        ) {
+          router.replace(
+            `/dashboard?parish=${encodeURIComponent(
+              data.parish
+            )}`
+          );
+          return;
+        }
+
+        setParish(data.parish);
+      } catch (error) {
+        console.error(
+          "Parish session verification error:",
+          error
+        );
+
+        router.replace("/register");
+      } finally {
+        setAuthChecking(false);
       }
+    }
+
+    verifyParishAccess();
+  }, [requestedParish, router]);
+
+  /*
+   * LOAD REGISTRATION
+   */
+  useEffect(() => {
+    if (!parish || authChecking) {
+      return;
+    }
+
+    async function loadRegistration() {
+      setLoading(true);
+      setError("");
 
       try {
-        setLoading(true);
-        setError("");
-
         const response = await fetch(
           `/api/registrations?parish=${encodeURIComponent(
             parish
@@ -157,27 +148,21 @@ function DashboardContent() {
 
         if (!response.ok || !data.success) {
           throw new Error(
-            data.error || "Failed to load registration"
+            data.error ||
+              "Unable to load registration."
           );
         }
 
-        if (data.registration) {
-          setCoordinators(
-            data.registration.coordinators || []
-          );
-
-          setChildren(
-            data.registration.children || []
-          );
-        } else {
-          setCoordinators([]);
-          setChildren([]);
-        }
+        setRegistration(
+          data.registration || null
+        );
       } catch (error) {
         console.error(error);
 
         setError(
-          "Unable to load registration data."
+          error instanceof Error
+            ? error.message
+            : "Unable to load registration."
         );
       } finally {
         setLoading(false);
@@ -185,33 +170,25 @@ function DashboardContent() {
     }
 
     loadRegistration();
-  }, [parish]);
+  }, [parish, authChecking]);
 
-  // -----------------------------------------
-  // ADD COORDINATOR
-  // -----------------------------------------
-
+  /*
+   * ADD COORDINATOR
+   */
   async function addCoordinator() {
-    if (
-      !coordinatorName.trim() ||
-      !coordinatorMobile.trim()
-    ) {
-      setError(
-        "Please enter coordinator name and mobile number."
-      );
+    setError("");
+
+    if (!coordinatorName.trim()) {
+      setError("Please enter coordinator name.");
       return;
     }
 
-    const newCoordinator: Coordinator = {
-      id: Date.now(),
-      name: coordinatorName.trim(),
-      mobile: coordinatorMobile.trim(),
-    };
+    if (!coordinatorPhone.trim()) {
+      setError("Please enter coordinator phone.");
+      return;
+    }
 
     try {
-      setSaving(true);
-      setError("");
-
       const response = await fetch(
         "/api/registrations",
         {
@@ -222,7 +199,12 @@ function DashboardContent() {
           body: JSON.stringify({
             parish,
             action: "addCoordinator",
-            coordinator: newCoordinator,
+            coordinator: {
+              name: coordinatorName.trim(),
+              phone: coordinatorPhone.trim(),
+              email:
+                coordinatorEmail.trim() || "",
+            },
           }),
         }
       );
@@ -231,57 +213,49 @@ function DashboardContent() {
 
       if (!response.ok || !data.success) {
         throw new Error(
-          data.error || "Failed to save coordinator"
+          data.error ||
+            "Unable to add coordinator."
         );
       }
 
-      setCoordinators(
-        data.registration.coordinators || []
-      );
+      setRegistration(data.registration);
 
       setCoordinatorName("");
-      setCoordinatorMobile("");
-      setShowCoordinatorForm(false);
+      setCoordinatorPhone("");
+      setCoordinatorEmail("");
     } catch (error) {
       console.error(error);
 
       setError(
-        "Unable to save coordinator. Please try again."
+        error instanceof Error
+          ? error.message
+          : "Unable to add coordinator."
       );
-    } finally {
-      setSaving(false);
     }
   }
 
-  // -----------------------------------------
-  // ADD CHILD
-  // -----------------------------------------
-
+  /*
+   * ADD CHILD
+   */
   async function addChild() {
-    if (
-      !childName.trim() ||
-      !childClass ||
-      !childGender ||
-      !parentMobile.trim()
-    ) {
-      setError(
-        "Please fill in all child details."
-      );
+    setError("");
+
+    if (!childName.trim()) {
+      setError("Please enter child name.");
       return;
     }
 
-    const newChild: Child = {
-      id: Date.now(),
-      name: childName.trim(),
-      className: childClass,
-      gender: childGender,
-      parentMobile: parentMobile.trim(),
-    };
+    if (!childAge.trim()) {
+      setError("Please enter child age.");
+      return;
+    }
+
+    if (!childGender.trim()) {
+      setError("Please select child gender.");
+      return;
+    }
 
     try {
-      setSaving(true);
-      setError("");
-
       const response = await fetch(
         "/api/registrations",
         {
@@ -292,7 +266,11 @@ function DashboardContent() {
           body: JSON.stringify({
             parish,
             action: "addChild",
-            child: newChild,
+            child: {
+              name: childName.trim(),
+              age: childAge.trim(),
+              gender: childGender.trim(),
+            },
           }),
         }
       );
@@ -301,242 +279,36 @@ function DashboardContent() {
 
       if (!response.ok || !data.success) {
         throw new Error(
-          data.error || "Failed to save child"
+          data.error ||
+            "Unable to add child."
         );
       }
 
-      setChildren(
-        data.registration.children || []
-      );
+      setRegistration(data.registration);
 
       setChildName("");
-      setChildClass("");
+      setChildAge("");
       setChildGender("");
-      setParentMobile("");
-      setShowChildForm(false);
     } catch (error) {
       console.error(error);
 
       setError(
-        "Unable to save child. Please try again."
+        error instanceof Error
+          ? error.message
+          : "Unable to add child."
       );
-    } finally {
-      setSaving(false);
     }
   }
 
-  // -----------------------------------------
-  // OPEN EDIT COORDINATOR
-  // -----------------------------------------
-
-  function openEditCoordinator(
-    coordinator: Coordinator
+  /*
+   * DELETE COORDINATOR
+   */
+  async function deleteCoordinator(
+    index: number
   ) {
-    setEditingCoordinator(coordinator);
-
-    setEditCoordinatorName(
-      coordinator.name
-    );
-
-    setEditCoordinatorMobile(
-      coordinator.mobile
-    );
-
-    setEditType("coordinator");
     setError("");
-  }
-
-  // -----------------------------------------
-  // OPEN EDIT CHILD
-  // -----------------------------------------
-
-  function openEditChild(child: Child) {
-    setEditingChild(child);
-
-    setEditChildName(child.name);
-    setEditChildClass(child.className);
-    setEditChildGender(child.gender);
-    setEditParentMobile(child.parentMobile);
-
-    setEditType("child");
-    setError("");
-  }
-
-  // -----------------------------------------
-  // CLOSE EDIT MODAL
-  // -----------------------------------------
-
-  function closeEditModal() {
-    setEditType(null);
-
-    setEditingCoordinator(null);
-    setEditingChild(null);
-
-    setEditCoordinatorName("");
-    setEditCoordinatorMobile("");
-
-    setEditChildName("");
-    setEditChildClass("");
-    setEditChildGender("");
-    setEditParentMobile("");
-  }
-
-  // -----------------------------------------
-  // SAVE EDITED COORDINATOR
-  // -----------------------------------------
-
-  async function saveEditedCoordinator() {
-    if (!editingCoordinator) {
-      return;
-    }
-
-    if (
-      !editCoordinatorName.trim() ||
-      !editCoordinatorMobile.trim()
-    ) {
-      setError(
-        "Coordinator name and mobile number are required."
-      );
-      return;
-    }
 
     try {
-      setSaving(true);
-      setError("");
-
-      const response = await fetch(
-        "/api/registrations",
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            parish,
-            type: "coordinator",
-            id: editingCoordinator.id,
-            data: {
-              name: editCoordinatorName.trim(),
-              mobile:
-                editCoordinatorMobile.trim(),
-            },
-          }),
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(
-          data.error ||
-            "Failed to update coordinator"
-        );
-      }
-
-      setCoordinators(
-        data.registration.coordinators || []
-      );
-
-      closeEditModal();
-    } catch (error) {
-      console.error(error);
-
-      setError(
-        "Unable to update coordinator. Please try again."
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // -----------------------------------------
-  // SAVE EDITED CHILD
-  // -----------------------------------------
-
-  async function saveEditedChild() {
-    if (!editingChild) {
-      return;
-    }
-
-    if (
-      !editChildName.trim() ||
-      !editChildClass ||
-      !editChildGender ||
-      !editParentMobile.trim()
-    ) {
-      setError(
-        "Please fill in all child details."
-      );
-      return;
-    }
-
-    try {
-      setSaving(true);
-      setError("");
-
-      const response = await fetch(
-        "/api/registrations",
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            parish,
-            type: "child",
-            id: editingChild.id,
-            data: {
-              name: editChildName.trim(),
-              className: editChildClass,
-              gender: editChildGender,
-              parentMobile:
-                editParentMobile.trim(),
-            },
-          }),
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(
-          data.error || "Failed to update child"
-        );
-      }
-
-      setChildren(
-        data.registration.children || []
-      );
-
-      closeEditModal();
-    } catch (error) {
-      console.error(error);
-
-      setError(
-        "Unable to update child. Please try again."
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // -----------------------------------------
-  // DELETE COORDINATOR
-  // -----------------------------------------
-
-  async function deleteCoordinator(id: number) {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this coordinator?"
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      setSaving(true);
-      setError("");
-
       const response = await fetch(
         "/api/registrations",
         {
@@ -547,7 +319,7 @@ function DashboardContent() {
           body: JSON.stringify({
             parish,
             type: "coordinator",
-            id,
+            index,
           }),
         }
       );
@@ -557,41 +329,29 @@ function DashboardContent() {
       if (!response.ok || !data.success) {
         throw new Error(
           data.error ||
-            "Failed to delete coordinator"
+            "Unable to delete coordinator."
         );
       }
 
-      setCoordinators(
-        data.registration.coordinators || []
-      );
+      setRegistration(data.registration);
     } catch (error) {
       console.error(error);
 
       setError(
-        "Unable to delete coordinator. Please try again."
+        error instanceof Error
+          ? error.message
+          : "Unable to delete coordinator."
       );
-    } finally {
-      setSaving(false);
     }
   }
 
-  // -----------------------------------------
-  // DELETE CHILD
-  // -----------------------------------------
-
-  async function deleteChild(id: number) {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this child?"
-    );
-
-    if (!confirmed) {
-      return;
-    }
+  /*
+   * DELETE CHILD
+   */
+  async function deleteChild(index: number) {
+    setError("");
 
     try {
-      setSaving(true);
-      setError("");
-
       const response = await fetch(
         "/api/registrations",
         {
@@ -602,7 +362,7 @@ function DashboardContent() {
           body: JSON.stringify({
             parish,
             type: "child",
-            id,
+            index,
           }),
         }
       );
@@ -611,907 +371,424 @@ function DashboardContent() {
 
       if (!response.ok || !data.success) {
         throw new Error(
-          data.error || "Failed to delete child"
+          data.error ||
+            "Unable to delete child."
         );
       }
 
-      setChildren(
-        data.registration.children || []
-      );
+      setRegistration(data.registration);
     } catch (error) {
       console.error(error);
 
       setError(
-        "Unable to delete child. Please try again."
+        error instanceof Error
+          ? error.message
+          : "Unable to delete child."
       );
-    } finally {
-      setSaving(false);
     }
   }
 
-  // -----------------------------------------
-  // GO TO REVIEW
-  // -----------------------------------------
-
+  /*
+   * REVIEW & SUBMIT
+   *
+   * This button is intentionally available
+   * regardless of whether coordinators/children
+   * have been added.
+   *
+   * Final validation happens on the server.
+   */
   function goToReview() {
     setError("");
 
     router.push(
-      `/review?parish=${encodeURIComponent(parish)}`
+      `/review?parish=${encodeURIComponent(
+        parish
+      )}`
     );
   }
 
-  // -----------------------------------------
-  // NO PARISH
-  // -----------------------------------------
+  /*
+   * LOGOUT
+   */
+  async function logout() {
+    try {
+      await fetch(
+        "/api/parish-auth/logout",
+        {
+          method: "POST",
+        }
+      );
+    } catch (error) {
+      console.error(error);
+    }
 
-  if (!parish) {
+    router.replace("/register");
+  }
+
+  /*
+   * AUTH CHECK SCREEN
+   */
+  if (authChecking) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+        <div className="text-center">
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
 
-        <div className="rounded-2xl bg-white p-8 text-center shadow-sm">
-
-          <h1 className="text-xl font-bold text-gray-900">
-            Parish not selected
-          </h1>
-
-          <p className="mt-2 text-gray-500">
-            Please return to registration and select
-            your parish.
+          <p className="mt-4 text-sm text-gray-500">
+            Verifying parish access...
           </p>
-
         </div>
-
       </main>
     );
   }
 
+  /*
+   * NO AUTHENTICATED PARISH
+   */
+  if (!parish) {
+    return null;
+  }
+
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-8">
-
       <div className="mx-auto max-w-5xl">
 
         {/* HEADER */}
+        <div className="mb-6 flex flex-col gap-4 rounded-2xl bg-white p-6 shadow-sm md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-semibold tracking-[0.25em] text-blue-600 uppercase">
+              NINAD 2026
+            </p>
 
-        <div className="mb-8 text-center">
+            <h1 className="mt-2 text-3xl font-bold text-gray-900">
+              Parish Registration
+            </h1>
 
-          <p className="text-sm font-semibold tracking-[0.3em] text-blue-600 uppercase">
-            Children's Convention 2026
-          </p>
+            <p className="mt-2 text-gray-500">
+              {parish}
+            </p>
+          </div>
 
-          <h1 className="mt-2 text-4xl font-bold text-gray-900">
-            NINAD 2026
-          </h1>
-
-          <h2 className="mt-1 text-2xl font-semibold text-blue-600">
-            BHURGYALEM FEST
-          </h2>
-
+          <button
+            type="button"
+            onClick={logout}
+            className="rounded-xl border border-gray-300 px-5 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+          >
+            Logout
+          </button>
         </div>
 
         {/* ERROR */}
-
         {error && (
-          <div className="mb-6 flex items-center justify-between rounded-xl border border-red-200 bg-red-50 p-4">
-
+          <div className="mb-6 rounded-xl bg-red-50 p-4">
             <p className="text-sm font-medium text-red-600">
               {error}
             </p>
-
-            <button
-              type="button"
-              onClick={() => setError("")}
-              className="ml-4 text-lg font-bold text-red-500"
-            >
-              ×
-            </button>
-
           </div>
         )}
 
-        {/* PARISH SUMMARY */}
+        {/* LOADING */}
+        {loading ? (
+          <div className="rounded-2xl bg-white p-10 text-center shadow-sm">
+            <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
 
-        <div className="rounded-2xl bg-white p-6 shadow-sm">
-
-          <p className="text-sm font-medium text-gray-500">
-            PARISH
-          </p>
-
-          <h2 className="mt-1 text-2xl font-bold text-gray-900">
-            {parish}
-          </h2>
-
-          <div className="mt-6 grid grid-cols-2 gap-4">
-
-            <div className="rounded-xl bg-blue-50 p-5 text-center">
-
-              <p className="text-3xl font-bold text-blue-600">
-                {loading
-                  ? "..."
-                  : coordinators.length}
-              </p>
-
-              <p className="mt-1 text-sm font-medium text-gray-600">
-                Coordinators
-              </p>
-
-            </div>
-
-            <div className="rounded-xl bg-blue-50 p-5 text-center">
-
-              <p className="text-3xl font-bold text-blue-600">
-                {loading
-                  ? "..."
-                  : children.length}
-              </p>
-
-              <p className="mt-1 text-sm font-medium text-gray-600">
-                Children
-              </p>
-
-            </div>
-
+            <p className="mt-4 text-sm text-gray-500">
+              Loading registration...
+            </p>
           </div>
+        ) : (
+          <>
+            {/* COORDINATORS */}
+            <section className="mb-6 rounded-2xl bg-white p-6 shadow-sm md:p-8">
+              <div className="mb-6">
+                <h2 className="text-xl font-bold text-gray-900">
+                  Coordinators
+                </h2>
 
-        </div>
+                <p className="mt-1 text-sm text-gray-500">
+                  Add the coordinators responsible for
+                  your parish.
+                </p>
+              </div>
 
-        {/* ================================= */}
-        {/* COORDINATORS */}
-        {/* ================================= */}
+              <div className="grid gap-4 md:grid-cols-3">
+                <input
+                  type="text"
+                  placeholder="Coordinator name"
+                  value={coordinatorName}
+                  onChange={(e) =>
+                    setCoordinatorName(
+                      e.target.value
+                    )
+                  }
+                  className="rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
 
-        <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm">
+                <input
+                  type="text"
+                  placeholder="Phone number"
+                  value={coordinatorPhone}
+                  onChange={(e) =>
+                    setCoordinatorPhone(
+                      e.target.value
+                    )
+                  }
+                  className="rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
 
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
-            <div>
-
-              <h2 className="text-xl font-bold text-gray-900">
-                Coordinators
-              </h2>
-
-              <p className="mt-1 text-sm text-gray-500">
-                Add the coordinators responsible for
-                your parish.
-              </p>
-
-            </div>
-
-            <button
-              type="button"
-              onClick={() =>
-                setShowCoordinatorForm(
-                  !showCoordinatorForm
-                )
-              }
-              disabled={saving}
-              className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:bg-gray-300"
-            >
-              {showCoordinatorForm
-                ? "Cancel"
-                : "+ Add Coordinator"}
-            </button>
-
-          </div>
-
-          {/* ADD COORDINATOR */}
-
-          {showCoordinatorForm && (
-            <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50 p-5">
-
-              <h3 className="font-bold text-gray-900">
-                Add Coordinator
-              </h3>
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-
-                <div>
-
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Coordinator Name
-                  </label>
-
-                  <input
-                    type="text"
-                    value={coordinatorName}
-                    onChange={(e) =>
-                      setCoordinatorName(
-                        e.target.value
-                      )
-                    }
-                    placeholder="Enter full name"
-                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-
-                </div>
-
-                <div>
-
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Mobile Number
-                  </label>
-
-                  <input
-                    type="tel"
-                    value={coordinatorMobile}
-                    onChange={(e) =>
-                      setCoordinatorMobile(
-                        e.target.value
-                      )
-                    }
-                    placeholder="Enter mobile number"
-                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-
-                </div>
-
+                <input
+                  type="email"
+                  placeholder="Email (optional)"
+                  value={coordinatorEmail}
+                  onChange={(e) =>
+                    setCoordinatorEmail(
+                      e.target.value
+                    )
+                  }
+                  className="rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
               </div>
 
               <button
                 type="button"
                 onClick={addCoordinator}
-                disabled={saving}
-                className="mt-5 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:bg-gray-300"
+                className="mt-4 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700"
               >
-                {saving
-                  ? "Saving..."
-                  : "Save Coordinator"}
+                Add Coordinator
               </button>
 
-            </div>
-          )}
+              {/* COORDINATOR LIST */}
+              {registration &&
+                registration.coordinators &&
+                registration.coordinators.length >
+                  0 && (
+                  <div className="mt-6 space-y-3">
+                    {registration.coordinators.map(
+                      (
+                        coordinator,
+                        index
+                      ) => (
+                        <div
+                          key={index}
+                          className="flex flex-col gap-3 rounded-xl border border-gray-200 p-4 md:flex-row md:items-center md:justify-between"
+                        >
+                          <div>
+                            <p className="font-semibold text-gray-900">
+                              {
+                                coordinator.name
+                              }
+                            </p>
 
-          {/* COORDINATOR LIST */}
+                            <p className="text-sm text-gray-500">
+                              {
+                                coordinator.phone
+                              }
+                            </p>
 
-          <div className="mt-6">
-
-            {loading ? (
-              <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center">
-
-                <p className="text-gray-500">
-                  Loading coordinators...
-                </p>
-
-              </div>
-            ) : coordinators.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center">
-
-                <p className="text-gray-500">
-                  No coordinators added yet.
-                </p>
-
-              </div>
-            ) : (
-              <div className="space-y-3">
-
-                {coordinators.map(
-                  (coordinator, index) => (
-                    <div
-                      key={coordinator.id}
-                      className="rounded-xl border border-gray-200 p-4"
-                    >
-
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
-                        <div>
-
-                          <p className="font-semibold text-gray-900">
-                            {index + 1}.{" "}
-                            {coordinator.name}
-                          </p>
-
-                          <p className="mt-1 text-sm text-gray-500">
-                            {coordinator.mobile}
-                          </p>
-
-                        </div>
-
-                        <div className="flex gap-2">
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              openEditCoordinator(
-                                coordinator
-                              )
-                            }
-                            disabled={saving}
-                            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:bg-gray-100"
-                          >
-                            Edit
-                          </button>
+                            {coordinator.email && (
+                              <p className="text-sm text-gray-500">
+                                {
+                                  coordinator.email
+                                }
+                              </p>
+                            )}
+                          </div>
 
                           <button
                             type="button"
                             onClick={() =>
                               deleteCoordinator(
-                                coordinator.id
+                                index
                               )
                             }
-                            disabled={saving}
-                            className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:bg-gray-100"
+                            className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
                           >
                             Delete
                           </button>
-
                         </div>
-
-                      </div>
-
-                    </div>
-                  )
-                )}
-
-              </div>
-            )}
-
-          </div>
-
-        </div>
-
-        {/* ================================= */}
-        {/* CHILDREN */}
-        {/* ================================= */}
-
-        <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm">
-
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
-            <div>
-
-              <h2 className="text-xl font-bold text-gray-900">
-                Children
-              </h2>
-
-              <p className="mt-1 text-sm text-gray-500">
-                Add all participating children from
-                your parish.
-              </p>
-
-            </div>
-
-            <button
-              type="button"
-              onClick={() =>
-                setShowChildForm(!showChildForm)
-              }
-              disabled={saving}
-              className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:bg-gray-300"
-            >
-              {showChildForm
-                ? "Cancel"
-                : "+ Add Child"}
-            </button>
-
-          </div>
-
-          {/* ADD CHILD */}
-
-          {showChildForm && (
-            <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50 p-5">
-
-              <h3 className="font-bold text-gray-900">
-                Add Child
-              </h3>
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-
-                <div className="sm:col-span-2">
-
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Student Name
-                  </label>
-
-                  <input
-                    type="text"
-                    value={childName}
-                    onChange={(e) =>
-                      setChildName(e.target.value)
-                    }
-                    placeholder="Enter student's full name"
-                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-
-                </div>
-
-                <div>
-
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Class
-                  </label>
-
-                  <select
-                    value={childClass}
-                    onChange={(e) =>
-                      setChildClass(e.target.value)
-                    }
-                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  >
-
-                    <option value="">
-                      Select class
-                    </option>
-
-                    {classes.map((className) => (
-                      <option
-                        key={className}
-                        value={className}
-                      >
-                        {className}
-                      </option>
-                    ))}
-
-                  </select>
-
-                </div>
-
-                <div>
-
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Gender
-                  </label>
-
-                  <div className="grid grid-cols-2 gap-3">
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setChildGender("Boy")
-                      }
-                      className={`rounded-xl border px-4 py-3 font-medium transition ${
-                        childGender === "Boy"
-                          ? "border-blue-600 bg-blue-600 text-white"
-                          : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                      }`}
-                    >
-                      Boy
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setChildGender("Girl")
-                      }
-                      className={`rounded-xl border px-4 py-3 font-medium transition ${
-                        childGender === "Girl"
-                          ? "border-blue-600 bg-blue-600 text-white"
-                          : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                      }`}
-                    >
-                      Girl
-                    </button>
-
-                  </div>
-
-                </div>
-
-                <div className="sm:col-span-2">
-
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Parent's Contact Number
-                  </label>
-
-                  <input
-                    type="tel"
-                    value={parentMobile}
-                    onChange={(e) =>
-                      setParentMobile(
-                        e.target.value
                       )
-                    }
-                    placeholder="Enter parent's mobile number"
-                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
+                    )}
+                  </div>
+                )}
+            </section>
 
-                </div>
+            {/* CHILDREN */}
+            <section className="mb-6 rounded-2xl bg-white p-6 shadow-sm md:p-8">
+              <div className="mb-6">
+                <h2 className="text-xl font-bold text-gray-900">
+                  Children
+                </h2>
 
+                <p className="mt-1 text-sm text-gray-500">
+                  Add the children participating from
+                  your parish.
+                </p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <input
+                  type="text"
+                  placeholder="Child name"
+                  value={childName}
+                  onChange={(e) =>
+                    setChildName(
+                      e.target.value
+                    )
+                  }
+                  className="rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+
+                <input
+                  type="text"
+                  placeholder="Age"
+                  value={childAge}
+                  onChange={(e) =>
+                    setChildAge(
+                      e.target.value
+                    )
+                  }
+                  className="rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+
+                <select
+                  value={childGender}
+                  onChange={(e) =>
+                    setChildGender(
+                      e.target.value
+                    )
+                  }
+                  className="rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">
+                    Select gender
+                  </option>
+
+                  <option value="Male">
+                    Male
+                  </option>
+
+                  <option value="Female">
+                    Female
+                  </option>
+                </select>
               </div>
 
               <button
                 type="button"
                 onClick={addChild}
-                disabled={saving}
-                className="mt-5 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:bg-gray-300"
+                className="mt-4 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700"
               >
-                {saving
-                  ? "Saving..."
-                  : "Save Child"}
+                Add Child
               </button>
 
-            </div>
-          )}
-
-          {/* CHILD LIST */}
-
-          <div className="mt-6">
-
-            {loading ? (
-              <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center">
-
-                <p className="text-gray-500">
-                  Loading children...
-                </p>
-
-              </div>
-            ) : children.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center">
-
-                <p className="text-gray-500">
-                  No children added yet.
-                </p>
-
-              </div>
-            ) : (
-              <div className="space-y-3">
-
-                {children.map((child, index) => (
-                  <div
-                    key={child.id}
-                    className="rounded-xl border border-gray-200 p-4"
-                  >
-
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
-                      <div>
-
-                        <p className="font-semibold text-gray-900">
-                          {index + 1}. {child.name}
-                        </p>
-
-                        <p className="mt-1 text-sm text-gray-500">
-                          {child.className} •{" "}
-                          {child.gender}
-                        </p>
-
-                        <p className="mt-1 text-sm text-gray-500">
-                          Parent:{" "}
-                          {child.parentMobile}
-                        </p>
-
-                      </div>
-
-                      <div className="flex gap-2">
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            openEditChild(child)
-                          }
-                          disabled={saving}
-                          className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:bg-gray-100"
+              {/* CHILD LIST */}
+              {registration &&
+                registration.children &&
+                registration.children.length >
+                  0 && (
+                  <div className="mt-6 space-y-3">
+                    {registration.children.map(
+                      (child, index) => (
+                        <div
+                          key={index}
+                          className="flex flex-col gap-3 rounded-xl border border-gray-200 p-4 md:flex-row md:items-center md:justify-between"
                         >
-                          Edit
-                        </button>
+                          <div>
+                            <p className="font-semibold text-gray-900">
+                              {child.name}
+                            </p>
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            deleteChild(child.id)
-                          }
-                          disabled={saving}
-                          className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:bg-gray-100"
-                        >
-                          Delete
-                        </button>
+                            <p className="text-sm text-gray-500">
+                              Age: {child.age}{" "}
+                              •{" "}
+                              {child.gender}
+                            </p>
+                          </div>
 
-                      </div>
-
-                    </div>
-
+                          <button
+                            type="button"
+                            onClick={() =>
+                              deleteChild(
+                                index
+                              )
+                            }
+                            className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )
+                    )}
                   </div>
-                ))}
+                )}
+            </section>
 
+            {/* SUMMARY */}
+            <section className="mb-6 rounded-2xl bg-white p-6 shadow-sm">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="rounded-xl bg-gray-50 p-5">
+                  <p className="text-sm text-gray-500">
+                    Parish
+                  </p>
+
+                  <p className="mt-1 font-bold text-gray-900">
+                    {parish}
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-gray-50 p-5">
+                  <p className="text-sm text-gray-500">
+                    Coordinators
+                  </p>
+
+                  <p className="mt-1 text-2xl font-bold text-gray-900">
+                    {registration
+                      ?.coordinators
+                      ?.length || 0}
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-gray-50 p-5">
+                  <p className="text-sm text-gray-500">
+                    Children
+                  </p>
+
+                  <p className="mt-1 text-2xl font-bold text-gray-900">
+                    {registration
+                      ?.children
+                      ?.length || 0}
+                  </p>
+                </div>
               </div>
-            )}
+            </section>
 
-          </div>
+            {/* REVIEW & SUBMIT */}
+            <section className="rounded-2xl bg-white p-6 shadow-sm md:p-8">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">
+                    Ready to continue?
+                  </h2>
 
-        </div>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Review your registration before
+                    final submission.
+                  </p>
+                </div>
 
-        {/* ================================= */}
-        {/* REVIEW & SUBMIT */}
-        {/* ================================= */}
-
-        <button
-          type="button"
-          onClick={goToReview}
-          disabled={loading}
-          className="mt-8 w-full rounded-xl bg-blue-600 px-6 py-4 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
-        >
-          Review & Submit
-        </button>
-
-        <p className="mt-4 text-center text-sm text-gray-400">
-          Your information is saved as a draft. You can
-          return anytime and continue your registration.
-        </p>
-
+                <button
+                  type="button"
+                  onClick={goToReview}
+                  disabled={loading}
+                  className="rounded-xl bg-blue-600 px-8 py-4 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                >
+                  Review &amp; Submit
+                </button>
+              </div>
+            </section>
+          </>
+        )}
       </div>
-
-      {/* ======================================= */}
-      {/* EDIT COORDINATOR MODAL */}
-      {/* ======================================= */}
-
-      {editType === "coordinator" &&
-        editingCoordinator && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-
-            <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-
-              <div className="flex items-center justify-between">
-
-                <div>
-
-                  <h2 className="text-xl font-bold text-gray-900">
-                    Edit Coordinator
-                  </h2>
-
-                  <p className="mt-1 text-sm text-gray-500">
-                    Update coordinator details.
-                  </p>
-
-                </div>
-
-                <button
-                  type="button"
-                  onClick={closeEditModal}
-                  disabled={saving}
-                  className="flex h-9 w-9 items-center justify-center rounded-full text-xl text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                >
-                  ×
-                </button>
-
-              </div>
-
-              <div className="mt-6 space-y-5">
-
-                <div>
-
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Coordinator Name
-                  </label>
-
-                  <input
-                    type="text"
-                    value={editCoordinatorName}
-                    onChange={(e) =>
-                      setEditCoordinatorName(
-                        e.target.value
-                      )
-                    }
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-
-                </div>
-
-                <div>
-
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Mobile Number
-                  </label>
-
-                  <input
-                    type="tel"
-                    value={editCoordinatorMobile}
-                    onChange={(e) =>
-                      setEditCoordinatorMobile(
-                        e.target.value
-                      )
-                    }
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-
-                </div>
-
-              </div>
-
-              <div className="mt-7 flex gap-3">
-
-                <button
-                  type="button"
-                  onClick={closeEditModal}
-                  disabled={saving}
-                  className="flex-1 rounded-xl border border-gray-300 px-5 py-3 font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="button"
-                  onClick={saveEditedCoordinator}
-                  disabled={saving}
-                  className="flex-1 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-700 disabled:bg-gray-300"
-                >
-                  {saving
-                    ? "Saving..."
-                    : "Save Changes"}
-                </button>
-
-              </div>
-
-            </div>
-
-          </div>
-        )}
-
-      {/* ======================================= */}
-      {/* EDIT CHILD MODAL */}
-      {/* ======================================= */}
-
-      {editType === "child" &&
-        editingChild && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-
-            <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-
-              <div className="flex items-center justify-between">
-
-                <div>
-
-                  <h2 className="text-xl font-bold text-gray-900">
-                    Edit Child
-                  </h2>
-
-                  <p className="mt-1 text-sm text-gray-500">
-                    Update the child's details.
-                  </p>
-
-                </div>
-
-                <button
-                  type="button"
-                  onClick={closeEditModal}
-                  disabled={saving}
-                  className="flex h-9 w-9 items-center justify-center rounded-full text-xl text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                >
-                  ×
-                </button>
-
-              </div>
-
-              <div className="mt-6 space-y-5">
-
-                <div>
-
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Student Name
-                  </label>
-
-                  <input
-                    type="text"
-                    value={editChildName}
-                    onChange={(e) =>
-                      setEditChildName(
-                        e.target.value
-                      )
-                    }
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-
-                </div>
-
-                <div>
-
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Class
-                  </label>
-
-                  <select
-                    value={editChildClass}
-                    onChange={(e) =>
-                      setEditChildClass(
-                        e.target.value
-                      )
-                    }
-                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  >
-
-                    <option value="">
-                      Select class
-                    </option>
-
-                    {classes.map((className) => (
-                      <option
-                        key={className}
-                        value={className}
-                      >
-                        {className}
-                      </option>
-                    ))}
-
-                  </select>
-
-                </div>
-
-                <div>
-
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Gender
-                  </label>
-
-                  <div className="grid grid-cols-2 gap-3">
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditChildGender("Boy")
-                      }
-                      className={`rounded-xl border px-4 py-3 font-medium transition ${
-                        editChildGender === "Boy"
-                          ? "border-blue-600 bg-blue-600 text-white"
-                          : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                      }`}
-                    >
-                      Boy
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditChildGender("Girl")
-                      }
-                      className={`rounded-xl border px-4 py-3 font-medium transition ${
-                        editChildGender === "Girl"
-                          ? "border-blue-600 bg-blue-600 text-white"
-                          : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                      }`}
-                    >
-                      Girl
-                    </button>
-
-                  </div>
-
-                </div>
-
-                <div>
-
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Parent's Contact Number
-                  </label>
-
-                  <input
-                    type="tel"
-                    value={editParentMobile}
-                    onChange={(e) =>
-                      setEditParentMobile(
-                        e.target.value
-                      )
-                    }
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-
-                </div>
-
-              </div>
-
-              <div className="mt-7 flex gap-3">
-
-                <button
-                  type="button"
-                  onClick={closeEditModal}
-                  disabled={saving}
-                  className="flex-1 rounded-xl border border-gray-300 px-5 py-3 font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="button"
-                  onClick={saveEditedChild}
-                  disabled={saving}
-                  className="flex-1 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-700 disabled:bg-gray-300"
-                >
-                  {saving
-                    ? "Saving..."
-                    : "Save Changes"}
-                </button>
-
-              </div>
-
-            </div>
-
-          </div>
-        )}
-
     </main>
   );
 }
@@ -1523,6 +800,7 @@ export default function DashboardPage() {
         <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
           <div className="text-center">
             <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+
             <p className="mt-4 text-sm text-gray-500">
               Loading dashboard...
             </p>

@@ -13,9 +13,11 @@ export default function RegisterPage() {
 
   const [parishes, setParishes] = useState<Parish[]>([]);
   const [selectedParish, setSelectedParish] = useState("");
+  const [accessCode, setAccessCode] = useState("");
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loginLoading, setLoginLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -30,13 +32,17 @@ export default function RegisterPage() {
         const data = await response.json();
 
         if (!data.success) {
-          throw new Error(data.error || "Failed to load parishes");
+          throw new Error(
+            data.error || "Failed to load parishes"
+          );
         }
 
         setParishes(data.parishes);
       } catch (error) {
         console.error(error);
-        setError("Unable to load parish list. Please try again.");
+        setError(
+          "Unable to load parish list. Please try again."
+        );
       } finally {
         setLoading(false);
       }
@@ -46,13 +52,73 @@ export default function RegisterPage() {
   }, []);
 
   const filteredParishes = parishes.filter((parish) =>
-    parish.name.toLowerCase().includes(search.toLowerCase())
+    parish.name
+      .toLowerCase()
+      .includes(search.toLowerCase())
   );
 
   function selectParish(name: string) {
     setSelectedParish(name);
     setSearch("");
     setOpen(false);
+    setAccessCode("");
+    setError("");
+  }
+
+  async function continueRegistration() {
+    if (!selectedParish) {
+      setError("Please select your parish.");
+      return;
+    }
+
+    if (!accessCode.trim()) {
+      setError("Please enter your parish access code.");
+      return;
+    }
+
+    setError("");
+    setLoginLoading(true);
+
+    try {
+      const response = await fetch(
+        "/api/parish-auth/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            parish: selectedParish,
+            accessCode: accessCode.trim(),
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.error ||
+            "Invalid parish or access code."
+        );
+      }
+
+      router.push(
+        `/dashboard?parish=${encodeURIComponent(
+          selectedParish
+        )}`
+      );
+    } catch (error) {
+      console.error(error);
+
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Unable to verify parish access code."
+      );
+    } finally {
+      setLoginLoading(false);
+    }
   }
 
   return (
@@ -82,7 +148,8 @@ export default function RegisterPage() {
           </h2>
 
           <p className="mt-2 text-gray-500">
-            Select your parish to begin the registration.
+            Select your parish and enter the access code
+            provided to your parish.
           </p>
 
           {/* Parish Selector */}
@@ -94,7 +161,11 @@ export default function RegisterPage() {
 
             <button
               type="button"
-              onClick={() => !loading && !error && setOpen(!open)}
+              onClick={() =>
+                !loading &&
+                !error &&
+                setOpen(!open)
+              }
               disabled={loading || !!error}
               className="flex w-full items-center justify-between rounded-xl border border-gray-300 bg-white px-4 py-3 text-left outline-none transition hover:border-blue-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
             >
@@ -107,7 +178,8 @@ export default function RegisterPage() {
               >
                 {loading
                   ? "Loading parishes..."
-                  : selectedParish || "Select your parish"}
+                  : selectedParish ||
+                    "Select your parish"}
               </span>
 
               <span
@@ -123,15 +195,17 @@ export default function RegisterPage() {
             {open && (
               <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
 
-                {/* Search inside dropdown */}
+                {/* Search */}
                 <div className="border-b border-gray-200 p-3">
                   <input
                     autoFocus
                     type="text"
                     placeholder="Type parish name..."
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    onChange={(e) =>
+                      setSearch(e.target.value)
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
 
@@ -147,9 +221,12 @@ export default function RegisterPage() {
                       <button
                         key={parish.name}
                         type="button"
-                        onClick={() => selectParish(parish.name)}
+                        onClick={() =>
+                          selectParish(parish.name)
+                        }
                         className={`block w-full px-4 py-3 text-left text-sm transition hover:bg-blue-50 ${
-                          selectedParish === parish.name
+                          selectedParish ===
+                          parish.name
                             ? "bg-blue-50 font-semibold text-blue-600"
                             : "text-gray-700"
                         }`}
@@ -164,15 +241,6 @@ export default function RegisterPage() {
             )}
           </div>
 
-          {/* Error */}
-          {error && (
-            <div className="mt-4 rounded-xl bg-red-50 p-4">
-              <p className="text-sm font-medium text-red-600">
-                {error}
-              </p>
-            </div>
-          )}
-
           {/* Selected Parish */}
           {selectedParish && (
             <div className="mt-6 rounded-xl bg-blue-50 p-4">
@@ -186,19 +254,66 @@ export default function RegisterPage() {
             </div>
           )}
 
+          {/* Access Code */}
+          {selectedParish && (
+            <div className="mt-6">
+
+              <label className="mb-2 block text-sm font-semibold text-gray-700">
+                Parish Access Code
+              </label>
+
+              <input
+                type="text"
+                value={accessCode}
+                onChange={(e) => {
+                  setAccessCode(
+                    e.target.value.toUpperCase()
+                  );
+                  setError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    continueRegistration();
+                  }
+                }}
+                placeholder="Enter your parish access code"
+                autoComplete="off"
+                spellCheck={false}
+                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+
+              <p className="mt-2 text-xs text-gray-500">
+                Enter the unique access code given to your
+                parish.
+              </p>
+
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div className="mt-4 rounded-xl bg-red-50 p-4">
+              <p className="text-sm font-medium text-red-600">
+                {error}
+              </p>
+            </div>
+          )}
+
           {/* Continue */}
           <button
-            disabled={!selectedParish || loading || !!error}
-            onClick={() => {
-              if (selectedParish) {
-                router.push(
-                  `/dashboard?parish=${encodeURIComponent(selectedParish)}`
-                );
-              }
-            }}
+            disabled={
+              !selectedParish ||
+              !accessCode.trim() ||
+              loading ||
+              loginLoading ||
+              !!error
+            }
+            onClick={continueRegistration}
             className="mt-8 w-full rounded-xl bg-blue-600 px-6 py-4 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
           >
-            Continue
+            {loginLoading
+              ? "Verifying..."
+              : "Continue"}
           </button>
 
         </div>

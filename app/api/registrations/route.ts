@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDatabase } from "../../../lib/mongodb";
+import { getParishSession } from "../../../lib/parish-auth";
 
 type Coordinator = {
   id: number;
@@ -15,38 +16,99 @@ type Child = {
   parentMobile: string;
 };
 
+async function getAuthorizedParish() {
+  const session = await getParishSession();
+
+  if (!session?.parish) {
+    return null;
+  }
+
+  return session.parish;
+}
+
+function unauthorizedResponse() {
+  return NextResponse.json(
+    {
+      success: false,
+      error:
+        "Parish access required. Please log in with your parish access code.",
+    },
+    { status: 401 }
+  );
+}
+
+function forbiddenResponse() {
+  return NextResponse.json(
+    {
+      success: false,
+      error: "You do not have access to this parish.",
+    },
+    { status: 403 }
+  );
+}
+
+function checkRequestedParish(
+  requestedParish: unknown,
+  authorizedParish: string
+) {
+  if (
+    requestedParish !== undefined &&
+    requestedParish !== null &&
+    String(requestedParish).trim() !== "" &&
+    String(requestedParish).trim() !== authorizedParish
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 // =====================================================
 // GET
-// Load registration for a parish
+// Load registration for authenticated parish
 // =====================================================
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const parish = searchParams.get("parish");
+    const authorizedParish =
+      await getAuthorizedParish();
 
-    if (!parish) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Parish is required",
-        },
-        { status: 400 }
-      );
+    if (!authorizedParish) {
+      return unauthorizedResponse();
+    }
+
+    const { searchParams } = new URL(request.url);
+
+    const requestedParish =
+      searchParams.get("parish");
+
+    if (
+      !checkRequestedParish(
+        requestedParish,
+        authorizedParish
+      )
+    ) {
+      return forbiddenResponse();
     }
 
     const db = await getDatabase();
 
     const registration = await db
       .collection("registrations")
-      .findOne({ parish });
+      .findOne({
+        parish: authorizedParish,
+      });
 
     return NextResponse.json({
       success: true,
       registration,
+      parish: authorizedParish,
     });
   } catch (error) {
-    console.error("GET registration error:", error);
+    console.error(
+      "GET registration error:",
+      error
+    );
 
     return NextResponse.json(
       {
@@ -72,24 +134,40 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    const parish = body.parish;
+    const authorizedParish =
+      await getAuthorizedParish();
+
+    if (!authorizedParish) {
+      return unauthorizedResponse();
+    }
+
+    /*
+     * IMPORTANT:
+     * The browser may send body.parish,
+     * but it is NEVER trusted.
+     *
+     * The authenticated session decides
+     * which parish can be modified.
+     */
+
+    if (
+      !checkRequestedParish(
+        body.parish,
+        authorizedParish
+      )
+    ) {
+      return forbiddenResponse();
+    }
+
     const action = body.action;
 
     const coordinator =
-      body.coordinator as Coordinator | undefined;
+      body.coordinator as
+        | Coordinator
+        | undefined;
 
     const child =
       body.child as Child | undefined;
-
-    if (!parish) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Parish is required",
-        },
-        { status: 400 }
-      );
-    }
 
     const db = await getDatabase();
 
@@ -114,7 +192,9 @@ export async function POST(request: Request) {
 
     if (action === "submit") {
       const registration =
-        await registrations.findOne({ parish });
+        await registrations.findOne({
+          parish: authorizedParish,
+        });
 
       if (!registration) {
         return NextResponse.json(
@@ -185,20 +265,23 @@ export async function POST(request: Request) {
       // Generate registration number
       // -------------------------------------------------
 
-      const parishCode = parish
-        .replace(/[^a-zA-Z]/g, "")
-        .toUpperCase()
-        .slice(0, 3)
-        .padEnd(3, "X");
+      const parishCode =
+        authorizedParish
+          .replace(/[^a-zA-Z]/g, "")
+          .toUpperCase()
+          .slice(0, 3)
+          .padEnd(3, "X");
 
       let registrationCode = "";
 
       let codeIsUnique = false;
 
       while (!codeIsUnique) {
-        const randomNumber = Math.floor(
-          100000 + Math.random() * 900000
-        );
+        const randomNumber =
+          Math.floor(
+            100000 +
+              Math.random() * 900000
+          );
 
         registrationCode =
           `NINAD26-${parishCode}-${randomNumber}`;
@@ -222,7 +305,7 @@ export async function POST(request: Request) {
       const updateResult =
         await registrations.updateOne(
           {
-            parish,
+            parish: authorizedParish,
             status: {
               $ne: "submitted",
             },
@@ -243,7 +326,9 @@ export async function POST(request: Request) {
 
       if (updateResult.modifiedCount === 0) {
         const latest =
-          await registrations.findOne({ parish });
+          await registrations.findOne({
+            parish: authorizedParish,
+          });
 
         if (
           latest &&
@@ -276,7 +361,7 @@ export async function POST(request: Request) {
 
       const finalRegistration =
         await registrations.findOne({
-          parish,
+          parish: authorizedParish,
         });
 
       return NextResponse.json({
@@ -289,7 +374,7 @@ export async function POST(request: Request) {
     }
 
     // =================================================
-    // CREATE / UPDATE DRAFT
+    // CREATE DRAFT
     // =================================================
 
     const now = new Date();
@@ -302,10 +387,12 @@ export async function POST(request: Request) {
     );
 
     await registrations.updateOne(
-      { parish },
+      {
+        parish: authorizedParish,
+      },
       {
         $setOnInsert: {
-          parish,
+          parish: authorizedParish,
           status: "draft",
           createdAt: now,
           coordinators: [],
@@ -339,24 +426,38 @@ export async function POST(request: Request) {
         );
       }
 
-      // -------------------------------------------------
-      // IMPORTANT:
-      // Coordinator can be added even after submission.
-      // -------------------------------------------------
+      const existingRegistration =
+        await registrations.findOne({
+          parish: authorizedParish,
+        });
+
+      if (
+        existingRegistration?.status ===
+        "submitted"
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "This registration has already been submitted",
+          },
+          { status: 400 }
+        );
+      }
 
       await registrations.updateOne(
-  { parish },
-  {
-    $push: {
-      coordinators: {
-        $each: [coordinator],
-      },
-    } as any,
-    $set: {
-      updatedAt: now,
-    },
-  }
-);
+        {
+          parish: authorizedParish,
+        },
+        {
+          $push: {
+  coordinators: coordinator as any,
+},
+          $set: {
+            updatedAt: now,
+          },
+        }
+      );
     }
 
     // =================================================
@@ -373,30 +474,45 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             success: false,
-            error: "All child details are required",
+            error:
+              "All child details are required",
           },
           { status: 400 }
         );
       }
 
-      // -------------------------------------------------
-      // IMPORTANT:
-      // Child can be added even after submission.
-      // -------------------------------------------------
+      const existingRegistration =
+        await registrations.findOne({
+          parish: authorizedParish,
+        });
+
+      if (
+        existingRegistration?.status ===
+        "submitted"
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "This registration has already been submitted",
+          },
+          { status: 400 }
+        );
+      }
 
       await registrations.updateOne(
-  { parish },
-  {
-    $push: {
-      children: {
-        $each: [child],
-      },
-    } as any,
-    $set: {
-      updatedAt: now,
-    },
-  }
-);
+        {
+          parish: authorizedParish,
+        },
+        {
+          $push: {
+  children: child as any,
+},
+          $set: {
+            updatedAt: now,
+          },
+        }
+      );
     }
 
     // =================================================
@@ -419,12 +535,13 @@ export async function POST(request: Request) {
 
     const registration =
       await registrations.findOne({
-        parish,
+        parish: authorizedParish,
       });
 
     return NextResponse.json({
       success: true,
       registration,
+      parish: authorizedParish,
     });
   } catch (error) {
     console.error(
@@ -454,13 +571,27 @@ export async function PATCH(request: Request) {
   try {
     const body = await request.json();
 
-    const parish = body.parish;
+    const authorizedParish =
+      await getAuthorizedParish();
+
+    if (!authorizedParish) {
+      return unauthorizedResponse();
+    }
+
+    if (
+      !checkRequestedParish(
+        body.parish,
+        authorizedParish
+      )
+    ) {
+      return forbiddenResponse();
+    }
+
     const type = body.type;
     const id = body.id;
     const data = body.data;
 
     if (
-      !parish ||
       !type ||
       id === undefined ||
       !data
@@ -481,7 +612,7 @@ export async function PATCH(request: Request) {
 
     const registration =
       await registrations.findOne({
-        parish,
+        parish: authorizedParish,
       });
 
     if (!registration) {
@@ -494,10 +625,22 @@ export async function PATCH(request: Request) {
       );
     }
 
-    // =================================================
-    // IMPORTANT:
-    // Editing is allowed even after submission.
-    // =================================================
+    // -------------------------------------------------
+    // Don't allow editing after final submission
+    // -------------------------------------------------
+
+    if (
+      registration.status === "submitted"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "This registration has already been submitted",
+        },
+        { status: 400 }
+      );
+    }
 
     // =================================================
     // EDIT COORDINATOR
@@ -511,7 +654,8 @@ export async function PATCH(request: Request) {
       const updatedCoordinators =
         coordinators.map((item) => {
           if (
-            String(item.id) === String(id)
+            String(item.id) ===
+            String(id)
           ) {
             return {
               ...item,
@@ -526,7 +670,9 @@ export async function PATCH(request: Request) {
         });
 
       await registrations.updateOne(
-        { parish },
+        {
+          parish: authorizedParish,
+        },
         {
           $set: {
             coordinators:
@@ -549,7 +695,8 @@ export async function PATCH(request: Request) {
       const updatedChildren =
         children.map((item) => {
           if (
-            String(item.id) === String(id)
+            String(item.id) ===
+            String(id)
           ) {
             return {
               ...item,
@@ -570,11 +717,12 @@ export async function PATCH(request: Request) {
         });
 
       await registrations.updateOne(
-        { parish },
+        {
+          parish: authorizedParish,
+        },
         {
           $set: {
-            children:
-              updatedChildren,
+            children: updatedChildren,
             updatedAt: new Date(),
           },
         }
@@ -595,19 +743,15 @@ export async function PATCH(request: Request) {
       );
     }
 
-    // =================================================
-    // RETURN UPDATED REGISTRATION
-    // =================================================
-
     const updatedRegistration =
       await registrations.findOne({
-        parish,
+        parish: authorizedParish,
       });
 
     return NextResponse.json({
       success: true,
-      registration:
-        updatedRegistration,
+      registration: updatedRegistration,
+      parish: authorizedParish,
     });
   } catch (error) {
     console.error(
@@ -637,12 +781,26 @@ export async function DELETE(request: Request) {
   try {
     const body = await request.json();
 
-    const parish = body.parish;
+    const authorizedParish =
+      await getAuthorizedParish();
+
+    if (!authorizedParish) {
+      return unauthorizedResponse();
+    }
+
+    if (
+      !checkRequestedParish(
+        body.parish,
+        authorizedParish
+      )
+    ) {
+      return forbiddenResponse();
+    }
+
     const type = body.type;
     const id = body.id;
 
     if (
-      !parish ||
       !type ||
       id === undefined
     ) {
@@ -662,7 +820,7 @@ export async function DELETE(request: Request) {
 
     const registration =
       await registrations.findOne({
-        parish,
+        parish: authorizedParish,
       });
 
     if (!registration) {
@@ -675,10 +833,22 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // =================================================
-    // IMPORTANT:
-    // Deleting is allowed even after submission.
-    // =================================================
+    // -------------------------------------------------
+    // Don't allow deletion after final submission
+    // -------------------------------------------------
+
+    if (
+      registration.status === "submitted"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "This registration has already been submitted",
+        },
+        { status: 400 }
+      );
+    }
 
     // =================================================
     // DELETE COORDINATOR
@@ -697,7 +867,9 @@ export async function DELETE(request: Request) {
         );
 
       await registrations.updateOne(
-        { parish },
+        {
+          parish: authorizedParish,
+        },
         {
           $set: {
             coordinators:
@@ -725,7 +897,9 @@ export async function DELETE(request: Request) {
         );
 
       await registrations.updateOne(
-        { parish },
+        {
+          parish: authorizedParish,
+        },
         {
           $set: {
             children:
@@ -750,19 +924,15 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // =================================================
-    // RETURN UPDATED REGISTRATION
-    // =================================================
-
     const updatedRegistration =
       await registrations.findOne({
-        parish,
+        parish: authorizedParish,
       });
 
     return NextResponse.json({
       success: true,
-      registration:
-        updatedRegistration,
+      registration: updatedRegistration,
+      parish: authorizedParish,
     });
   } catch (error) {
     console.error(
