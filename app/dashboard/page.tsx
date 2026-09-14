@@ -12,14 +12,15 @@ import {
 
 type Coordinator = {
   name: string;
-  phone: string;
+  mobile: string;
   email?: string;
 };
 
 type Child = {
   name: string;
-  age: string;
+  className: string;
   gender: string;
+  parentMobile: string;
   category?: string;
 };
 
@@ -51,17 +52,55 @@ function DashboardContent() {
 
   const [coordinatorName, setCoordinatorName] =
     useState("");
-  const [coordinatorPhone, setCoordinatorPhone] =
+  const [coordinatorMobile, setCoordinatorMobile] =
     useState("");
   const [coordinatorEmail, setCoordinatorEmail] =
     useState("");
 
   const [childName, setChildName] =
     useState("");
-  const [childAge, setChildAge] =
+  const [childClass, setChildClass] =
     useState("");
   const [childGender, setChildGender] =
     useState("");
+
+  const [parentMobile, setParentMobile] =
+    useState("");
+
+  const [editingType, setEditingType] =
+    useState<"coordinator" | "child" | null>(null);
+  const [editingIndex, setEditingIndex] =
+    useState<number | null>(null);
+  const [editName, setEditName] =
+    useState("");
+  const [editMobile, setEditMobile] =
+    useState("");
+  const [editEmail, setEditEmail] =
+    useState("");
+  const [editClass, setEditClass] =
+    useState("");
+  const [editGender, setEditGender] =
+    useState("");
+  const [editParentMobile, setEditParentMobile] =
+    useState("");
+  const [savingEdit, setSavingEdit] =
+    useState(false);
+
+  const classes = [
+    "Nursery",
+    "LKG",
+    "UKG",
+    "1st",
+    "2nd",
+    "3rd",
+    "4th",
+    "5th",
+    "6th",
+    "7th",
+    "8th",
+    "9th",
+    "10th",
+  ];
 
   /*
    * VERIFY PARISH SESSION
@@ -183,8 +222,8 @@ function DashboardContent() {
       return;
     }
 
-    if (!coordinatorPhone.trim()) {
-      setError("Please enter coordinator phone.");
+    if (!coordinatorMobile.trim()) {
+      setError("Please enter coordinator mobile number.");
       return;
     }
 
@@ -201,7 +240,7 @@ function DashboardContent() {
             action: "addCoordinator",
             coordinator: {
               name: coordinatorName.trim(),
-              phone: coordinatorPhone.trim(),
+              mobile: coordinatorMobile.trim(),
               email:
                 coordinatorEmail.trim() || "",
             },
@@ -221,7 +260,7 @@ function DashboardContent() {
       setRegistration(data.registration);
 
       setCoordinatorName("");
-      setCoordinatorPhone("");
+      setCoordinatorMobile("");
       setCoordinatorEmail("");
     } catch (error) {
       console.error(error);
@@ -245,13 +284,25 @@ function DashboardContent() {
       return;
     }
 
-    if (!childAge.trim()) {
-      setError("Please enter child age.");
+    if (!childClass.trim()) {
+      setError("Please select child's class.");
       return;
     }
 
     if (!childGender.trim()) {
       setError("Please select child gender.");
+      return;
+    }
+
+    if (!parentMobile.trim()) {
+      setError("Please enter parent's contact number.");
+      return;
+    }
+
+    const cleanedParentMobile = parentMobile.replace(/\D/g, "");
+
+    if (cleanedParentMobile.length !== 10) {
+      setError("Please enter a valid 10-digit parent contact number.");
       return;
     }
 
@@ -268,8 +319,9 @@ function DashboardContent() {
             action: "addChild",
             child: {
               name: childName.trim(),
-              age: childAge.trim(),
+              className: childClass.trim(),
               gender: childGender.trim(),
+              parentMobile: cleanedParentMobile,
             },
           }),
         }
@@ -287,8 +339,9 @@ function DashboardContent() {
       setRegistration(data.registration);
 
       setChildName("");
-      setChildAge("");
+      setChildClass("");
       setChildGender("");
+      setParentMobile("");
     } catch (error) {
       console.error(error);
 
@@ -297,6 +350,158 @@ function DashboardContent() {
           ? error.message
           : "Unable to add child."
       );
+    }
+  }
+
+  /*
+   * EDIT COORDINATOR
+   */
+  function startEditCoordinator(
+    index: number,
+    coordinator: Coordinator
+  ) {
+    setError("");
+    setEditingType("coordinator");
+    setEditingIndex(index);
+    setEditName(coordinator.name || "");
+    setEditMobile(coordinator.mobile || "");
+    setEditEmail(coordinator.email || "");
+    setEditClass("");
+    setEditGender("");
+    setEditParentMobile("");
+  }
+
+  /*
+   * EDIT CHILD
+   */
+  function startEditChild(
+    index: number,
+    child: Child
+  ) {
+    setError("");
+    setEditingType("child");
+    setEditingIndex(index);
+    setEditName(child.name || "");
+    setEditMobile("");
+    setEditEmail("");
+    setEditClass(child.className || "");
+    setEditGender(child.gender || "");
+    setEditParentMobile(child.parentMobile || "");
+  }
+
+  function cancelEdit() {
+    setEditingType(null);
+    setEditingIndex(null);
+    setEditName("");
+    setEditMobile("");
+    setEditEmail("");
+    setEditClass("");
+    setEditGender("");
+    setEditParentMobile("");
+  }
+
+  async function saveEdit() {
+    if (
+      editingType === null ||
+      editingIndex === null
+    ) {
+      return;
+    }
+
+    setError("");
+
+    if (!editName.trim()) {
+      setError("Please enter the name.");
+      return;
+    }
+
+    if (
+      editingType === "coordinator" &&
+      !editMobile.trim()
+    ) {
+      setError("Please enter coordinator mobile number.");
+      return;
+    }
+
+    if (
+      editingType === "child" &&
+      !editClass.trim()
+    ) {
+      setError("Please select child's class.");
+      return;
+    }
+
+    if (
+      editingType === "child" &&
+      !editGender.trim()
+    ) {
+      setError("Please select child gender.");
+      return;
+    }
+
+    const cleanedParentMobile =
+      editParentMobile.replace(/\D/g, "");
+
+    if (
+      editingType === "child" &&
+      cleanedParentMobile.length !== 10
+    ) {
+      setError(
+        "Please enter a valid 10-digit parent contact number."
+      );
+      return;
+    }
+
+    try {
+      setSavingEdit(true);
+
+      const response = await fetch(
+        "/api/registrations",
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            parish,
+            type: editingType,
+            index: editingIndex,
+            data:
+              editingType === "coordinator"
+                ? {
+                    name: editName.trim(),
+                    mobile: editMobile.trim(),
+                    email: editEmail.trim(),
+                  }
+                : {
+                    name: editName.trim(),
+                    className: editClass.trim(),
+                    gender: editGender.trim(),
+                    parentMobile: cleanedParentMobile,
+                  },
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.error || "Unable to update."
+        );
+      }
+
+      setRegistration(data.registration);
+      cancelEdit();
+    } catch (error) {
+      console.error(error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Unable to update."
+      );
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -511,7 +716,7 @@ function DashboardContent() {
                 </p>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-4">
                 <input
                   type="text"
                   placeholder="Coordinator name"
@@ -526,10 +731,10 @@ function DashboardContent() {
 
                 <input
                   type="text"
-                  placeholder="Phone number"
-                  value={coordinatorPhone}
+                  placeholder="Mobile number"
+                  value={coordinatorMobile}
                   onChange={(e) =>
-                    setCoordinatorPhone(
+                    setCoordinatorMobile(
                       e.target.value
                     )
                   }
@@ -581,7 +786,7 @@ function DashboardContent() {
 
                             <p className="text-sm text-gray-500">
                               {
-                                coordinator.phone
+                                coordinator.mobile
                               }
                             </p>
 
@@ -594,17 +799,32 @@ function DashboardContent() {
                             )}
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              deleteCoordinator(
-                                index
-                              )
-                            }
-                            className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
-                          >
-                            Delete
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                startEditCoordinator(
+                                  index,
+                                  coordinator
+                                )
+                              }
+                              className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50"
+                            >
+                              Edit
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                deleteCoordinator(
+                                  index
+                                )
+                              }
+                              className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
                       )
                     )}
@@ -625,7 +845,7 @@ function DashboardContent() {
                 </p>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-4">
                 <input
                   type="text"
                   placeholder="Child name"
@@ -638,17 +858,26 @@ function DashboardContent() {
                   className="rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
 
-                <input
-                  type="text"
-                  placeholder="Age"
-                  value={childAge}
+                <select
+                  value={childClass}
                   onChange={(e) =>
-                    setChildAge(
-                      e.target.value
-                    )
+                    setChildClass(e.target.value)
                   }
-                  className="rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                />
+                  className="rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">
+                    Select class
+                  </option>
+
+                  {classes.map((className) => (
+                    <option
+                      key={className}
+                      value={className}
+                    >
+                      {className}
+                    </option>
+                  ))}
+                </select>
 
                 <select
                   value={childGender}
@@ -671,6 +900,20 @@ function DashboardContent() {
                     Female
                   </option>
                 </select>
+
+                <input
+                  type="tel"
+                  placeholder="Parent's contact number"
+                  value={parentMobile}
+                  onChange={(e) =>
+                    setParentMobile(
+                      e.target.value.replace(/\D/g, "").slice(0, 10)
+                    )
+                  }
+                  inputMode="numeric"
+                  maxLength={10}
+                  className="rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
               </div>
 
               <button
@@ -699,29 +942,176 @@ function DashboardContent() {
                             </p>
 
                             <p className="text-sm text-gray-500">
-                              Age: {child.age}{" "}
+                              Class: {child.className}{" "}
                               •{" "}
                               {child.gender}
                             </p>
+
+                            <p className="mt-1 text-sm text-gray-500">
+                              Parent: {child.parentMobile}
+                            </p>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              deleteChild(
-                                index
-                              )
-                            }
-                            className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
-                          >
-                            Delete
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                startEditChild(
+                                  index,
+                                  child
+                                )
+                              }
+                              className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50"
+                            >
+                              Edit
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                deleteChild(
+                                  index
+                                )
+                              }
+                              className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
                       )
                     )}
                   </div>
                 )}
             </section>
+
+            {/* EDIT MODAL */}
+            {editingType !== null && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+                  <h2 className="text-xl font-bold text-gray-900">
+                    Edit{" "}
+                    {editingType === "coordinator"
+                      ? "Coordinator"
+                      : "Child"}
+                  </h2>
+
+                  <div className="mt-5 grid gap-4 md:grid-cols-2">
+                    <input
+                      type="text"
+                      placeholder={
+                        editingType === "coordinator"
+                          ? "Coordinator name"
+                          : "Child name"
+                      }
+                      value={editName}
+                      onChange={(e) =>
+                        setEditName(e.target.value)
+                      }
+                      className="rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    />
+
+                    {editingType === "coordinator" ? (
+                      <>
+                        <input
+                          type="tel"
+                          placeholder="Mobile number"
+                          value={editMobile}
+                          onChange={(e) =>
+                            setEditMobile(
+                              e.target.value.replace(/\D/g, "").slice(0, 10)
+                            )
+                          }
+                          inputMode="numeric"
+                          maxLength={10}
+                          className="rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                        />
+
+                        <input
+                          type="email"
+                          placeholder="Email (optional)"
+                          value={editEmail}
+                          onChange={(e) =>
+                            setEditEmail(e.target.value)
+                          }
+                          className="rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 md:col-span-2"
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <select
+                          value={editClass}
+                          onChange={(e) =>
+                            setEditClass(e.target.value)
+                          }
+                          className="rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                        >
+                          <option value="">
+                            Select class
+                          </option>
+                          {classes.map((className) => (
+                            <option
+                              key={className}
+                              value={className}
+                            >
+                              {className}
+                            </option>
+                          ))}
+                        </select>
+
+                        <select
+                          value={editGender}
+                          onChange={(e) =>
+                            setEditGender(e.target.value)
+                          }
+                          className="rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                        >
+                          <option value="">
+                            Select gender
+                          </option>
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                        </select>
+
+                        <input
+                          type="tel"
+                          placeholder="Parent's contact number"
+                          value={editParentMobile}
+                          onChange={(e) =>
+                            setEditParentMobile(
+                              e.target.value.replace(/\D/g, "").slice(0, 10)
+                            )
+                          }
+                          inputMode="numeric"
+                          maxLength={10}
+                          className="rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 md:col-span-2"
+                        />
+                      </>
+                    )}
+                  </div>
+
+                  <div className="mt-6 flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={cancelEdit}
+                      disabled={savingEdit}
+                      className="rounded-xl border border-gray-300 px-5 py-3 font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={saveEdit}
+                      disabled={savingEdit}
+                      className="rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {savingEdit ? "Saving..." : "Save Changes"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* SUMMARY */}
             <section className="mb-6 rounded-2xl bg-white p-6 shadow-sm">

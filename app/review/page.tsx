@@ -360,7 +360,7 @@ function ReviewContent() {
                   {coordinators.map(
                     (coordinator, index) => (
                       <div
-                        key={coordinator.id}
+                        key={`coordinator-${coordinator.id ?? index}`}
                         className="rounded-xl border border-gray-200 p-4"
                       >
 
@@ -432,7 +432,7 @@ function ReviewContent() {
 
                   {children.map((child, index) => (
                     <div
-                      key={child.id}
+                      key={`child-${child.id ?? index}`}
                       className="rounded-xl border border-gray-200 p-4"
                     >
 
@@ -526,11 +526,7 @@ function ReviewContent() {
               <button
                 type="button"
                 onClick={confirmSubmit}
-                disabled={
-                  submitting ||
-                  coordinators.length === 0 ||
-                  children.length === 0
-                }
+                disabled={submitting}
                 className="rounded-xl bg-blue-600 px-6 py-4 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
               >
                 {submitting

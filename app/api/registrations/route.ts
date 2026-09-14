@@ -6,6 +6,7 @@ type Coordinator = {
   id: number;
   name: string;
   mobile: string;
+  email?: string;
 };
 
 type Child = {
@@ -224,38 +225,28 @@ export async function POST(request: Request) {
       }
 
       // -------------------------------------------------
-      // Validate coordinator
+      // Validate registration
       // -------------------------------------------------
 
       const coordinators =
         (registration.coordinators ||
           []) as Coordinator[];
 
-      if (coordinators.length === 0) {
-        return NextResponse.json(
-          {
-            success: false,
-            error:
-              "Please add at least one coordinator before submitting.",
-          },
-          { status: 400 }
-        );
-      }
-
-      // -------------------------------------------------
-      // Validate children
-      // -------------------------------------------------
-
       const children =
         (registration.children ||
           []) as Child[];
 
-      if (children.length === 0) {
+      // A parish can submit with only coordinators,
+      // only children, or both. At least one is required.
+      if (
+        coordinators.length === 0 &&
+        children.length === 0
+      ) {
         return NextResponse.json(
           {
             success: false,
             error:
-              "Please add at least one child before submitting.",
+              "Please add at least one coordinator or one child before submitting.",
           },
           { status: 400 }
         );
@@ -589,11 +580,12 @@ export async function PATCH(request: Request) {
 
     const type = body.type;
     const id = body.id;
+    const index = body.index;
     const data = body.data;
 
     if (
       !type ||
-      id === undefined ||
+      (id === undefined && index === undefined) ||
       !data
     ) {
       return NextResponse.json(
@@ -652,17 +644,21 @@ export async function PATCH(request: Request) {
           []) as Coordinator[];
 
       const updatedCoordinators =
-        coordinators.map((item) => {
-          if (
-            String(item.id) ===
-            String(id)
-          ) {
+        coordinators.map((item, itemIndex) => {
+          const matches =
+            id !== undefined
+              ? String(item.id) === String(id)
+              : Number(index) === itemIndex;
+
+          if (matches) {
             return {
               ...item,
               name:
                 data.name ?? item.name,
               mobile:
                 data.mobile ?? item.mobile,
+              email:
+                data.email ?? item.email,
             };
           }
 
@@ -693,11 +689,13 @@ export async function PATCH(request: Request) {
           []) as Child[];
 
       const updatedChildren =
-        children.map((item) => {
-          if (
-            String(item.id) ===
-            String(id)
-          ) {
+        children.map((item, itemIndex) => {
+          const matches =
+            id !== undefined
+              ? String(item.id) === String(id)
+              : Number(index) === itemIndex;
+
+          if (matches) {
             return {
               ...item,
               name:
@@ -799,10 +797,11 @@ export async function DELETE(request: Request) {
 
     const type = body.type;
     const id = body.id;
+    const index = body.index;
 
     if (
       !type ||
-      id === undefined
+      (id === undefined && index === undefined)
     ) {
       return NextResponse.json(
         {
@@ -860,11 +859,16 @@ export async function DELETE(request: Request) {
           []) as Coordinator[];
 
       const updatedCoordinators =
-        coordinators.filter(
-          (item) =>
-            String(item.id) !==
-            String(id)
-        );
+        id !== undefined
+          ? coordinators.filter(
+              (item) =>
+                String(item.id) !==
+                String(id)
+            )
+          : coordinators.filter(
+              (_, itemIndex) =>
+                itemIndex !== Number(index)
+            );
 
       await registrations.updateOne(
         {
@@ -890,11 +894,16 @@ export async function DELETE(request: Request) {
           []) as Child[];
 
       const updatedChildren =
-        children.filter(
-          (item) =>
-            String(item.id) !==
-            String(id)
-        );
+        id !== undefined
+          ? children.filter(
+              (item) =>
+                String(item.id) !==
+                String(id)
+            )
+          : children.filter(
+              (_, itemIndex) =>
+                itemIndex !== Number(index)
+            );
 
       await registrations.updateOne(
         {
